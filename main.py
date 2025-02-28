@@ -72,7 +72,7 @@ def connect_wifi():
         # Reset Wi-Fi module after failure
         log("Resetting Wi-Fi module...")
         wlan.active(False)
-        time.sleep(1)
+        time.sleep(2)
         wlan.active(True)
         return False
     except OSError as e:
@@ -128,7 +128,7 @@ def push_to_thingspeak(temp, humid):
 # Main
 def main():
     log("Starting AM2302 monitor...")
-    WIFI_RETRY_INTERVAL = 300  # 5 minutes between retries when Wi-Fi is down
+    WIFI_RETRY_INTERVAL = 10  # 10 seconds between retries when Wi-Fi is down
     while True:
         try:
             temp, humid = read_sensor()
