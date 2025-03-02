@@ -92,7 +92,7 @@ def read_sensor(retries=3):
             sensor.measure()
             temp = sensor.temperature()
             humid = sensor.humidity()
-            log(f"Sensor read: Temp={temp}°C, Humidity={humid}%")
+            log(f"Sensor read: Temp={temp}, Humidity={humid}")
             return temp, humid
         except OSError as e:
             log(f"Sensor error (attempt {attempt + 1}): {e}", "WARNING")
