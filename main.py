@@ -13,7 +13,7 @@ WIFI_CREDENTIALS = {
     "hoxcentical": "8142apostrophe", 
     "moto g(30)_9866": "6t37a2cqmiuci34",
 }
-SERVER_URL = "https://pulse-dash-app.onrender.com/data"  # Render URL
+SERVER_URL = "https://pulse-dash-app-h3dmb3akfveqh8au.canadaeast-01.azurewebsites.net/add-item"  # Cosmos write URL
 LED_PIN = 48
 SENSOR_PIN = 2
 READ_DELAY = 30  # Seconds between sensor reads
@@ -22,7 +22,6 @@ MAX_FILE_SIZE = 2 * 1024 * 1024  # ~2 MB in bytes
 MEMORY_LIMIT = 100  # Max in-memory readings when file is full
 WIFI_RETRY_LIMIT = 10
 WIFI_RETRY_DELAY = 1
-WIFI_RETRY_INTERVAL = 60  # 1 minute between retries
 PUSH_RETRIES = 3
 PUSH_RETRY_DELAY = 2
 BLINK_DURATION = 0.25
@@ -69,7 +68,7 @@ def connect_wifi():
         for ssid, password in WIFI_CREDENTIALS.items():
             log(f"Connecting to {ssid}")
             wlan.connect(ssid, password)
-            for _ in range(WIFI_RETRY_LIMIT):
+            for retry in range(WIFI_RETRY_LIMIT):
                 if wlan.isconnected():
                     log(f"Connected to {ssid}: IP={wlan.ifconfig()[0]}")
                     blink(COLOR_GREEN)
@@ -109,21 +108,26 @@ def push_to_server(batch):
     for attempt in range(PUSH_RETRIES):
         try:
             headers = {"Content-Type": "application/json"}
-            payload = ujson.dumps(batch)
-            log(f"Sending batch of {len(batch)} readings (attempt {attempt + 1})")
+            # Create a single payload with the entire batch
+            payload = ujson.dumps([{
+                "id": str(int(reading["timestamp"])),  # Unique ID based on timestamp
+                "partitionKey": "sensor_" + str(machine.unique_id()),  # Unique partition key for this sensor
+                "name": f"Temp: {reading['temperature']}°C, Humidity: {reading['humidity']}%"
+            } for reading in batch])
+            log(f"Sending batch of {len(batch)} readings (attempt {attempt + 1}): {payload}")
             response = urequests.post(SERVER_URL, data=payload, headers=headers, timeout=15)
             if response.status_code == 200:
-                log("Data uploaded successfully")
+                log("Batch uploaded successfully")
                 blink(COLOR_GREEN, 2)
                 response.close()
                 return True
-            log(f"Server rejected: HTTP {response.status_code}", "WARNING")
+            log(f"Server rejected the batch: HTTP {response.status_code}, {response.text}", "WARNING")
             response.close()
         except OSError as e:
-            log(f"Network error: {e}", "ERROR")
+            log(f"Network error during batch push: {e}", "ERROR")
             blink(COLOR_RED)
-        time.sleep(PUSH_RETRY_DELAY)
-    log("All upload attempts failed", "ERROR")
+        time.sleep(PUSH_RETRY_DELAY * (2 ** attempt))  # Exponential backoff for retries
+    log("All batch upload attempts failed", "ERROR")
     return False
 
 # Save Batch to File
@@ -156,11 +160,12 @@ def flush_file(filename="data.txt"):
             reading = ujson.loads(line.strip())
             batch.append(reading)
             if len(batch) == BATCH_SIZE:
-                if not push_to_server(batch):
+                if push_to_server(batch):  # Batch push
+                    batch = []
+                else:
                     log("Flush failed, keeping file", "ERROR")
                     return False
-                batch = []
-        if batch and push_to_server(batch):  # Send remaining
+        if batch and push_to_server(batch):  # Send remaining items
             os.remove(filename)
             log("File flushed and deleted")
             led_solid(COLOR_OFF)  # Reset LED
